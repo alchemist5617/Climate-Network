@@ -1,0 +1,139 @@
+---
+title: "Exploring Mohammad's rainfall data"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+This notebook explores issues around modelling seasonality in monthly rainfall data when one is forced to deal with
+meaningful zeros representing months where there is no rain.
+
+I had to install some additional libraries that were not already in my R installation
+```{r}
+#install.packages("fpp2")
+```
+
+First load some libraries and define some functions for use later
+```{r}
+library(forecast)
+library(fitdistrplus)
+library(fpp2)
+
+# This function adds some small amount of noise to a timeseries to 
+# remove discreteness effects and get rid of zeros
+fuzzify<-function(x)
+{
+  # Add some "measurement error"" to each data point
+  if (x==0.0) 
+    {y<-x + 0.005*runif(1,min=0.0, max=1.0)} 
+  else 
+  {y<-x + 0.005*runif(1,min=-1.0, max=1.0)} 
+  return(y)
+}
+```
+
+First read in the data and convert it to a timeseries object
+```{r}
+data_folder <- "/Users/colmconnaughton/Dropbox/research/statistics/modeling_rainfall_timeseries/"
+filename <- paste(data_folder,"precipitation2.csv" ,  sep="")
+data <- read.csv(filename, header=FALSE, sep=",")
+x = data[['V1']]
+
+y = ts(x, start=c(1900, 1), freq=12)
+plot(y)
+
+```
+
+Plot a histogram of the raw data. The data comes with a resolution on 0.01. We need to define a custom bin structure for the histogram so that all of the zero values go into a point mass at zero.
+```{r}
+hist(x, prob=TRUE, breaks=seq(-1, 50, by=1), col="grey",main="Empirical distribution of precipitation", 
+     xlab="Precipitation (mm)",
+     ylab="Frequency",
+     border="blue")
+```
+Remove the zeros and values less than 1  to see what the rest of the data looks like:
+```{r}
+  x2 = x[x>1.0] - 1.0
+#hist(x2, prob=TRUE, breaks=seq(0, 50, by=1), col="grey",
+#     main="Empirical distribution of precipitation without zeros", 
+#     xlab="Precipitation (mm)",
+#     ylab="Frequency",
+#     border="blue")
+hist.data = hist(x2, breaks=seq(0, 50, by=1), plot=F)
+hist.data$counts[hist.data$counts>0] <- log(hist.data$counts[hist.data$counts>0], 10)
+#hist.data$counts = log(hist.data$counts, 10)
+plot(hist.data)
+```
+This plot suggests that a gamma or exponential distribution might be a reasonable fit for the non-zero part of the data. Let's perform some fits:
+```{r}
+fit.gamma <- fitdist(x2, distr = "gamma", method = "mle", lower = c(0,0))
+summary(fit.gamma)
+fit.exp <- fitdist(x2, distr = "exp", method = "mle", lower = c(0))
+summary(fit.exp)
+```
+```{r}
+plot(fit.gamma)
+```
+```{r}
+plot(fit.exp)
+```
+The gamma fit seems slightly better so let's go with that one.
+
+```{r}
+alpha = as.numeric(fit.gamma$estimate["shape"])
+beta = as.numeric(fit.gamma$estimate["rate"])
+x3 = qnorm(pgamma(x2, shape=alpha, rate=beta))
+hist(x3, probability = TRUE)
+```
+Here I deal with the zeros in a hacky way by applying the fuzzify function to the data to add a small amount of noise which is constrained to produce strictly positive numbers for the zeros.
+
+```{r}
+z1 = sapply(x, fuzzify)
+y = ts(z1, start=c(1900, 1), freq=12)
+plot(window(y, 1910, 1920))
+
+```
+The plot shows that this has negligible effect on the timeseries.
+
+Now transform the data using the gamma distribution that was fit to the data without the zeroes (more hacky stuff)
+```{r}
+z2 = qnorm(pgamma(z1, shape=alpha, rate=beta))
+#z2<- z2 - mean(z2)
+y2 = ts(z2, start=c(1900, 1), freq=12)
+plot(y2)
+```
+Let's take a shorter period to train a model.
+```{r}
+plot(window(y2, 1900, 1920))
+```
+Apply the stl decomposition to the transformed series.
+```{r}
+y2.stl = stl(window(y2, 1900, 1920), s.window="periodic", robust = TRUE)
+plot(y2.stl)
+y2.seasonal_stl <- y2.stl$time.series[,1]
+y2.trend_stl    <- y2.stl$time.series[,2]
+y2.noise_stl    <- y2.stl$time.series[,3]
+```
+Plot the histogram and autcorrelation function of the noise component:
+
+```{r}
+hist(as.numeric(y2.noise_stl))
+```
+```{r}
+acf(y2.noise_stl)
+```
+Now try to forecast the next 3 years of the transformed timeseries
+```{r}
+f <- forecast(y2.stl, method='arima', h = 36)
+plot(f)
+lines(window(y2, 1920, 1923), col = "red")
+```
+Transform back to convert the forecasts back to the original scale
+```{r}
+predictions1 = as.numeric(f$mean)
+#predictions2 = qnorm(pgamma(z1, shape=alpha, rate=beta))
+predictions2 = qgamma(pnorm(predictions1), shape=alpha, rate=beta)
+f2 = ts(predictions2, start=c(1920, 1), freq=12)
+plot(window(y, 1910, 1923))
+lines(window(f2, 1920, 1923), col = "red")
+```

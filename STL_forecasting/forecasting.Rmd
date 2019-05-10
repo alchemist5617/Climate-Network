@@ -1,0 +1,139 @@
+---
+title: "Forecasting precipitation timeseries using STL"
+output: html_notebook
+---
+
+First load some libraries
+```{r}
+library(forecast)
+library(fitdistrplus)
+```
+Define some functions for use later. Set the data folder to point to the appropriate place if the data moves.
+```{r}
+# This function adds some small amount of noise to a timeseries to 
+# remove discreteness effects and get rid of zeros
+fuzzify<-function(x)
+{
+  # Add some "measurement error"" to each data point
+  if (x==0.0) 
+    {y<-x + 0.005*runif(1,min=0.0, max=1.0)} 
+  else 
+  {y<-x + 0.005*runif(1,min=-1.0, max=1.0)} 
+  return(y)
+}
+
+#data_folder <- "/Users/colmconnaughton/Dropbox/research/statistics/modeling_rainfall_timeseries/"
+data_folder <- "./"
+```
+
+Now process the data
+
+The timeseries contain about 70 years of data sampled at monthly intervals.
+
+We model the timeseries by applying the Box-Cox transformation to the data (having first
+added some noise to remove discreteness effects and to push zero measurements slightly
+above zero), fitting the STL model to the transformed data, performing the forecast and then 
+applying the inverse Box-Cox transformation.
+
+For each timeseries, we do a sequence of forecasts on a rolling origin out to a 
+forecast horizon of m years. Each forecast is made based on fitting  a model to 
+a training window of length n years prior to the forecast origin. Forecast errors 
+are measured by comparing against the observed values in the forecast window.
+
+The resulting forecast errors are averaged to provide a measure of average forecast skill. 
+Because of the strong seasonality, we choose to measure forecast skill be expressing the 
+forecast error for each month in the forecasting window as a proportion of the historical 
+average precipitation for that month.
+```{r}
+filelist = c("precipitationBSh.csv", "precipitationBWh.csv","precipitationCwb.csv")
+#filelist = c("precipitationBSh.csv")
+# Set training window length (in years)
+n=15
+# Set forecasting window length (in years)
+m=3
+# Set start year
+y0 = 1900
+# Set annual sampling rate
+f = 12 
+
+# Create a data structure to store the relative forecast errors
+RE <- list()
+skill <- list()
+
+for(item in filelist)
+{
+  filename <- paste(data_folder,item ,  sep="")
+  data <- read.csv(filename, header=TRUE, sep=",")
+  x = data[['X0']]
+  x <- sapply(x, fuzzify)
+  L = length(x)
+  # Store the data in a timeseries object
+  x.ts = ts(x, start=c(y0, 1), freq=f)
+  # Work out the last year present in the data set
+  yfinal = y0 + ((L -(L %% f))/f) - 10
+  
+  # Create a matrix to store the errors
+  RE[[item]] = matrix(0.0, (yfinal-(n+m))-y0+1, m*f)
+  
+   # Calculate the seasonal averages for the entire timeseries
+  s = rep(colMeans(matrix(x[1:L - (L %% f)], ncol = f, byrow = TRUE), na.rm=TRUE), m)
+  
+  # Loop to perform evaluation on a rolling forecasting origin
+  for(origin in c( y0:(yfinal-(n+m)) ) )
+  {
+    #print(c(origin, origin+n - 1/f, origin+n, origin+n+m - 1/f))
+    # Extract training and test data for each forecast origin 
+    x.train <- window(x.ts, origin,origin+n - 1/f)
+    x.test <- window(x.ts, origin+n, origin+n+m - 1/f)
+    # Find optimal Box-Cox transformation to apply to the training data
+    lambda <- BoxCox.lambda(x.train)
+    # Fit an STL model to the Box-Cox transformed training data
+    x.fit <- stl(BoxCox(x.train,lambda), s.window="periodic", robust = TRUE)
+    # Use the fitted model to produce forecast for test window
+    # and apply inverse Box-Cox transformation
+    x.pred = forecast(x.fit, h=m*f, lambda=lambda, biasadj=FALSE)
+    # Calculate the forecast errors by comparing predictions to test data
+    scale = mean(x.train)
+    scale = 1
+    error = abs((x.pred$mean-x.test)/scale)
+    if(any(is.na(x.pred$mean)))
+    {
+      print(paste(c("Predictions contain NA ", origin)))
+    }
+    RE[[item]][origin-y0+1,  ] = as.numeric(error)
+  }
+  
+  # Now calculate average forecast errors
+  meanError = colMeans(RE[[item]], na.rm=TRUE)
+  # Store the forecast error as a proportion of the seasonal average
+  skill[[item]] = ts(meanError/s, start=c(0, 1), freq=f)
+}
+```
+This snippet will run and plot individual forecasts for the last file 
+by setting the origin variable explicitly. This is just for the purposes
+of visualisation.
+```{r}
+origin = 1920
+x.train <- window(x.ts, origin,origin+n - 1/f)
+    x.test <- window(x.ts, origin+n, origin+n+m - 1/f)
+    # Find optimal Box-Cox transformation to apply to the training data
+    lambda <- BoxCox.lambda(x.train)
+    # Fit an STL model to the Box-Cox transformed training data
+    x.fit <- stl(BoxCox(x.train,lambda), s.window="periodic", robust = TRUE)
+    # Use the fitted model to produce forecast for test window
+    # and apply inverse Box-Cox transformation
+    x.pred = forecast(x.fit, h=m*f, lambda=lambda, biasadj=TRUE)
+    # Calculate the forecast errors by comparing predictions to test data
+    error = abs((x.pred$mean-x.test))
+plot(x.pred, ylim = c(0, max(x.train)), main="Forecasting example")
+lines(x.test, col="red")
+```
+Finally we can make some plots.
+```{r}
+for(item in filelist)
+{
+plot(100 * skill[[item]], xlab="horizon (years)",ylab="Error (% seasonal average)", main=item)
+}
+```
+
+
