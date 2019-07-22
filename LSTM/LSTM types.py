@@ -47,7 +47,7 @@ def train_test_split_ts(X, y, test_size=0.2):
     split_index = int((1-test_size)*r)
     return(X[:split_index,:,:],X[split_index:,:,:],y[:split_index],y[split_index:])
 
-data = pd.read_csv("precipitationBWh.csv")
+data = pd.read_csv("../data/precipitationBWh.csv")
 data = data["0"].values
 
 name = []
