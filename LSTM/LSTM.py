@@ -39,7 +39,7 @@ def split_sequence(sequence, n_steps):
 		y.append(seq_y)
 	return array(X), array(y)
 
-data = pd.read_csv("precipitationBWh.csv")
+data = pd.read_csv("../data/precipitationBWh.csv")
 data = data["0"].values
 
 
