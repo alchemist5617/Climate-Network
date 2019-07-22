@@ -22,19 +22,6 @@ from statsmodels.tsa.x13 import x13_arima_analysis
 from sklearn.preprocessing import Normalizer
 from netCDF4 import Dataset
 
-def deseasonal_X13(data,start = '1946-01-01',freq = 'M'):
-    XPATH = "./x13as"
-    n = data.shape[1]
-    data_deseasonal = np.zeros(data.shape)
-    data_seasonal = np.zeros(data.shape)
-    for i in range(n):
-        result = x13_arima_analysis(endog = data[:,i],print_stdout=True,start = start,freq = freq, x12path=XPATH,forecast_years=1)
-        data_deseasonal[:,i] = result.seasadj.values
-       # Idx = result.results.find("Date   Forecast      Error\n   ------------------------------\n   ")
-       # data_seasonal[i] = float(result.results[Idx+73:Idx+85].strip())
-        data_seasonal[:,i] = data[:,i] - data_deseasonal[:,i]
-    return(data_deseasonal, data_seasonal)
-
 def deseasonal_STL(data,freq=12):
     n = data.shape[1]
     data_deseasonal = np.zeros(data.shape)
@@ -43,16 +30,6 @@ def deseasonal_STL(data,freq=12):
         decomp = seasonal_decompose(data[:,i], model='additive',freq=freq,extrapolate_trend="freq")
         data_deseasonal[:,i] = decomp.trend + decomp.resid
         data_seasonal[:,i] = decomp.seasonal[:freq]
-    return(data_deseasonal, data_seasonal)
-
-def deseasonal_STL1(data,freq=12):
-    n = data.shape[1]
-    data_deseasonal = np.zeros(data.shape)
-    data_seasonal = np.zeros(data.shape)
-    for i in range(n):
-        decomp = decompose(data[:,i], period=freq)
-        data_deseasonal[:,i] = decomp.trend + decomp.resid
-        data_seasonal[:,i] = decomp.seasonal
     return(data_deseasonal, data_seasonal)
 
 def deseasonal_monthly_anomaly(data,freq=12):
@@ -69,34 +46,7 @@ def deseasonal_monthly_anomaly(data,freq=12):
             result[Idx] = temp[Idx] - temp[Idx].mean()
         data_deseasonal[:,i] = result
     return(data_deseasonal, averages) 
-    
-def moving_average(data, n=10) :
-    result = np.cumsum(data, dtype=float)
-    result[n:] = result[n:] - result[:-n]
-    result = result[n - 1:] / n
-    return(np.concatenate([np.repeat(result[0],n-1),result]))    
-
-def deseasonal_monthly_anomaly_MA(data,freq=12,MA=10):
-    n  = data.shape[1]
-    N  = data.shape[0]
-    m = int(N/freq)
-    data_deseasonal = np.zeros(data.shape)
-    data_seasonal = np.zeros([m,freq,n])
-    for i in range(n):
-        temp = data[:,i]
-        result = np.zeros((N))
-        for j in range(freq):
-            Idx = np.arange(j,N,freq)
-            ma = moving_average(temp[Idx],MA)
-            data_seasonal[:,j,i] = ma
-            result[Idx] = temp[Idx] - ma
-        data_deseasonal[:,i] = result
-   #     ma = moving_average(data[:,i],MA)
-   #     ma = np.concatenate([np.repeat(ma[0],MA-1),ma])
-   #     data_deseasonal[:,i] = data[:,i] - ma
-   #     data_seasonal[:,i] = ma
-    return(data_deseasonal, data_seasonal) 
-   
+       
 def deseasonal_curve_fitting(data,degree=4):
     n  = data.shape[1]
     data_deseasonal = np.zeros(data.shape)
@@ -114,20 +64,6 @@ def deseasonal_curve_fitting(data,degree=4):
         data_deseasonal[:,i] = series - curve
         data_seasonal[:,i] = curve
     return(data_deseasonal, data_seasonal)
-
-def deseasonal_annual_anomaly(data,freq=12):
-    n  = data.shape[1]
-    N  = data.shape[0]    
-    data_deseasonal = np.zeros(data.shape)
-    for i in range(n):
-        temp = data[:,i]
-        temp_list = []
-        for j in range(0,N,freq):   
-            temp_list.append(list(temp[j:j+freq] - temp[j:j+freq].mean()))
-            flat_list = [item for sublist in temp_list for item in sublist]
-        data_deseasonal[:,i] = np.array(flat_list)
-    return(data_deseasonal)
-
 
 def unflatten(data):
     """
@@ -648,7 +584,6 @@ def main():
     data = np.swapaxes(data,0,1)
     data = refine_data(data)
     MSE_ma,SP_ma, density_ma = model(data,model_type ="LR",feature = "normal",data_type = "MA", MA = 10)
-# b = deseasonal_monthly_anomaly_MA(data[:2,:])
 
 if __name__ == "__main__":
     main()
