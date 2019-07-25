@@ -42,9 +42,9 @@ class Data:
             lon_min = spatial_limits["lon_min"]
             lon_max = spatial_limits["lon_max"]
             if  lon_min in lon and lon_max in lon:
-                 lon_min_Idx = np.where(lon == lon_min)[0]
-                 lon_max_Idx = np.where(lon == lon_max)[0]
-                 if lon_min_Idx < lon_max_Idx:
+                 lon_min_Idx = np.where(lon == lon_min)[0][0]
+                 lon_max_Idx = np.where(lon == lon_max)[0][0]
+                 if lon_min_Idx <= lon_max_Idx:
                      self._lon = lon[lon_min_Idx:lon_max_Idx+1]
 
                  else:
@@ -55,9 +55,9 @@ class Data:
             lat_min = spatial_limits["lat_min"]
             lat_max = spatial_limits["lat_max"]
             if lat_min in lat and lat_max in lat:
-                 lat_min_Idx = np.where(lat == lat_min)[0]
-                 lat_max_Idx = np.where(lat == lat_max)[0] 
-                 if lat_min_Idx < lat_max_Idx: 
+                 lat_min_Idx = np.where(lat == lat_min)[0][0]
+                 lat_max_Idx = np.where(lat == lat_max)[0][0]
+                 if lat_min_Idx <= lat_max_Idx: 
                      self._lat = lat[lat_min_Idx:lat_max_Idx+1]
                  else:
                      raise IndexError('lat_min is not less than lat_max')
@@ -75,8 +75,8 @@ class Data:
             t_min = date2num(temporal_limits["time_min"], units)
             t_max = date2num(temporal_limits["time_max"], units)
             if t_min in time and t_max in time:
-                t_min_Idx = np.where(time == t_min)[0]
-                t_max_Idx = np.where(time == t_max)[0]
+                t_min_Idx = np.where(time == t_min)[0][0]
+                t_max_Idx = np.where(time == t_max)[0][0]
                 if t_min_Idx < t_max_Idx:
                     self._time = time[t_min_Idx:t_max_Idx+1]
                 else:
@@ -86,8 +86,10 @@ class Data:
         else:
             t_min_Idx = 0 
             t_max_Idx = len(time)-1
-            self._time = time
-            self._date = num2date(time, units)
+        
+        time = time[t_min_Idx:t_max_Idx+1]
+        self._time = time
+        self._date = num2date(time, units)
         #create final data
         var = np.swapaxes(var,0,2)
         data = var[lon_min_Idx:lon_max_Idx+1,lat_min_Idx:lat_max_Idx+1,
